@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{5-Fold Cross-Validation Resampling Benchmark on Drebin Static Dataset}
+\label{tab:resampling_benchmark}
+\begin{tabular}{llccccc}
+\hline
+\textbf{Model} & \textbf{Resampling} & \textbf{Accuracy (\%)} & \textbf{Precision (\%)} & \textbf{Recall (\%)} & \textbf{F1 (\%)} & \textbf{ROC-AUC (\%)} \\
+\hline
+Logistic Regression & None & 95.40 & 95.82 & 95.81 & 95.81 & 99.01 \\
+Logistic Regression & SMOTE & 93.83 & 93.97 & 94.88 & 94.42 & 98.41 \\
+Random Forest & None & 93.80 & 93.70 & 95.12 & 94.40 & 98.69 \\
+Random Forest & SMOTE & 93.70 & 94.15 & 94.42 & 94.27 & 98.60 \\
+XGBoost Optuna & None & 96.10 & 96.51 & 96.40 & 96.45 & 99.26 \\
+XGBoost Optuna & SMOTE & 95.94 & 96.66 & 95.93 & 96.29 & 99.26 \\
+XGBoost Optuna & scale_pos_weight & 95.78 & 96.60 & 95.70 & 96.14 & 99.22 \\
+\hline
+\end{tabular}
+\end{table}
