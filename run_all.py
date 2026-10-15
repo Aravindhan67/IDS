@@ -3,7 +3,7 @@ Master One-Click Orchestrator CLI
 Hybrid Android APK Intrusion Detection System (HIDS)
 
 Usage:
-  python run_all.py --mode gui          # Launches the interactive Streamlit Security Portal (http://localhost:8501)
+  python run_all.py --mode gui          # Launches the interactive Next.js Web UI & FastAPI ML Backend
   python run_all.py --mode benchmark    # Runs all 5-fold CV benchmarks and outputs results.json + figures
   python run_all.py --mode analyze --apk sample.apk  # Evaluates an APK with full multi-layer analysis
 """
@@ -12,6 +12,9 @@ import os
 import sys
 import argparse
 import logging
+import socket
+import webbrowser
+import subprocess
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("HIDS_Master")
@@ -20,27 +23,33 @@ logger = logging.getLogger("HIDS_Master")
 def main():
     parser = argparse.ArgumentParser(description="Hybrid Android APK Intrusion Detection System (HIDS)")
     parser.add_argument("--mode", choices=["benchmark", "analyze", "gui"], default="gui",
-                        help="Execution mode: 'gui' (Streamlit web dashboard), 'benchmark' (run 5-fold CV & paper ablations), or 'analyze' (scan single APK)")
+                        help="Execution mode: 'gui' (Next.js web dashboard + FastAPI ML server), 'benchmark' (run 5-fold CV), or 'analyze' (scan single APK)")
     parser.add_argument("--apk", type=str, help="Path to raw .apk file for live analysis")
     args = parser.parse_args()
 
     if args.mode == "gui":
-        import socket
-        import webbrowser
-        import subprocess
+        # Check if FastAPI backend (port 8000) is running
+        sock8000 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        backend_active = (sock8000.connect_ex(('127.0.0.1', 8000)) == 0)
+        sock8000.close()
 
-        # Check if port 8501 is already active
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        is_running = (sock.connect_ex(('127.0.0.1', 8501)) == 0)
-        sock.close()
+        if not backend_active:
+            logger.info("FastAPI ML backend is starting on http://127.0.0.1:8000 ...")
+            subprocess.Popen(["uvicorn", "api_server:app", "--host", "127.0.0.1", "--port", "8000"])
 
-        if is_running:
-            logger.info("AegisDroid HIDS Streamlit Server is ALREADY ACTIVE on http://localhost:8501!")
-            logger.info("Opening your browser to http://localhost:8501 ...")
-            webbrowser.open("http://localhost:8501")
+        # Check if Next.js frontend (port 3000) is active
+        sock3000 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        frontend_active = (sock3000.connect_ex(('127.0.0.1', 3000)) == 0)
+        sock3000.close()
+
+        if frontend_active:
+            logger.info("AegisDroid HIDS Next.js Dashboard is ACTIVE on http://localhost:3000!")
+            webbrowser.open("http://localhost:3000")
         else:
-            logger.info("Launching AegisDroid HIDS Streamlit Web Portal on http://localhost:8501 ...")
-            subprocess.run(["streamlit", "run", "streamlit_app.py"])
+            logger.info("Launching Next.js Web UI on http://localhost:3000 ...")
+            frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web_frontend")
+            subprocess.Popen(["npm", "run", "dev"], cwd=frontend_dir, shell=True)
+            webbrowser.open("http://localhost:3000")
 
     elif args.mode == "benchmark":
         logger.info("Starting End-to-End Experimental Benchmark Pipeline...")
