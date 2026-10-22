@@ -1,0 +1,180 @@
+# Hybrid Android APK Intrusion Detection System (HIDS)
+## Revised System Architecture, Reviewer Remediation & Experimental Blueprint
+
+---
+
+### 1. Executive Summary & Reviewer Audit Response
+
+This revised specification directly resolves the core methodological, architectural, and experimental deficiencies identified by peer reviewers and mentor audits.
+
+| Reviewer / Audit Finding | Root Cause in Prototype | Concrete Architectural & Engineering Remedy |
+| :--- | :--- | :--- |
+| **Reviewer 2, Point 1 & 5: Inactive Dynamic Branch** | `sandbox_mock/main.py` returned 5 hard-coded Dalvik API names matching none of the 470 Linux syscalls/binders in the model. Dynamic vector was always all zeros; $P_d$ was a constant ($0.5 \cdot P_s + C$). | Implement a realistic telemetry bridge strictly matching all 470 feature names. Provide live `strace`/Frida hooks for emulators, plus a transparently documented, calibrated dynamic trace synthesizer for offline testing. |
+| **Reviewer 2, Point 4: 46.5% Static Feature Gap** | Feature extractor only parsed `AndroidManifest.xml` permissions (115 features). 24 intents and 77 API calls/classes (100 features, 46.5%) were permanently 0 at inference. | Implement full Androguard DEX bytecode disassembler (`classes.dex` analysis) extracting all 24 intents and 77 API calls. Add unit tests verifying non-zero feature extraction on real APKs. |
+| **Reviewer 2, Point 3: Unpaired Data Fusion** | Drebin (static) and CICMalDroid (dynamic) do not share the same APK instances; naive row-zipping is statistically invalid. | Adopt an honest dual-benchmark evaluation: evaluate static on Drebin, dynamic on CICMalDroid; evaluate hybrid fusion as a **Cascaded Triage Pipeline** and report systematic late-fusion weight sweeps ($w_s \in [0, 1]$). |
+| **Reviewer 2, Point 2: Signature Layer Bias** | 2 placeholder hashes; VirusTotal matches forced 100% Critical, distorting ML evaluation metrics. | Completely decouple deterministic signature matching (VirusTotal / SHA-256) from ML benchmarking. Report signature hits as an isolated pre-filter. |
+| **Class Imbalance & SMOTE Nuance** | Drebin has 1,694 benign vs 5,560 malware; CICMalDroid has 1,795 benign vs 9,803 malware. **Benign is the minority**. | SMOTE must oversample the minority benign class, applied strictly on training folds. Benchmark SMOTE against XGBoost `scale_pos_weight` following recent findings ([arXiv:2602.08744](https://arxiv.org/abs/2602.08744)). |
+| **Novelty Framing & Paper Deficiencies** | Overstated "first hybrid IDS" claim; weak citations; informal phrases like "populate the tables". | Reframe core novelty around **What-If Counterfactual Remediation** (simulated feature revocation + SHAP attribution). Remove speculative text, fix references, and export 300 DPI figures. |
+
+---
+
+### 2. Revised System Architecture
+
+```mermaid
+flowchart TD
+    subgraph APK_Input["Input Layer"]
+        APK[Raw Android APK File]
+        D_Static["Drebin Static Benchmark<br/>(7,254 valid apps, 215 features)"]
+        D_Dynamic["CICMalDroid Dynamic Benchmark<br/>(11,598 apps, 470 features)"]
+    end
+
+    subgraph StaticBranch["Static Analysis Engine (Full 215-Feature Extractor)"]
+        ManifestParser["AndroidManifest.xml Parser<br/>(115 Permissions + 23 Intents)"]
+        DexParser["Androguard DEX Disassembler<br/>(77 Bytecode API Calls & Classes)"]
+        StaticVector["Full 215-D Static Feature Vector<br/>(Zero Gap / Verified Non-Zero Rate)"]
+    end
+
+    subgraph DynamicBranch["Dynamic Analysis Engine (470 Features)"]
+        LiveSandbox["Live Sandbox (strace / Frida Hooking)"]
+        SimTelemetry["Calibrated Telemetry Engine<br/>(Strict 470 Syscall/Binder Alignment)"]
+        DynamicVector["470-D Syscall & Binder Frequency Vector<br/>(Non-Zero Responsive Distributions)"]
+    end
+
+    subgraph CrossValidation["Leakage-Free Cross-Validation & Balancing"]
+        SKFold["Stratified 5-Fold Cross Validation<br/>(Drop Duplicates, Prevent Leakage)"]
+        ResampleEngine{"Resampling Benchmark"}
+        NoResample["1. Baseline (Unweighted)"]
+        SMOTE_Fold["2. SMOTE (Fitted on Train Fold Only)"]
+        ScalePosWeight["3. Cost-Sensitive (scale_pos_weight)"]
+    end
+
+    subgraph ModelBenchmarking["Model Zoo & Optuna HPO"]
+        LR["Logistic Regression (Baseline)"]
+        RF["Random Forest (Baseline)"]
+        XGB["XGBoost (Tuned via Optuna TPE)"]
+    end
+
+    subgraph FusionEngine["Hybrid Fusion & Decision Architecture"]
+        CascadedTriage["Cascaded Triage Architecture<br/>(Stage 1: Fast Static; Stage 2: Dynamic on Ambiguous)"]
+        SoftVoting["Soft-Voting Weight Sweep<br/>(w_s * P_s + w_d * P_d across w_s in [0, 1])"]
+    end
+
+    subgraph ExplainabilityAndRemediation["Explainability & Novel Remediation"]
+        SHAP["SHAP TreeExplainer (Attribution)"]
+        WhatIf["What-If Counterfactual Remediation<br/>(Zero high-risk features, re-score, quantify risk drop)"]
+    end
+
+    APK --> ManifestParser
+    APK --> DexParser
+    ManifestParser --> StaticVector
+    DexParser --> StaticVector
+
+    APK --> LiveSandbox
+    APK --> SimTelemetry
+    LiveSandbox --> DynamicVector
+    SimTelemetry --> DynamicVector
+
+    D_Static --> SKFold
+    D_Dynamic --> SKFold
+    StaticVector -.-> CascadedTriage
+    DynamicVector -.-> CascadedTriage
+
+    SKFold --> ResampleEngine
+    ResampleEngine --> NoResample
+    ResampleEngine --> SMOTE_Fold
+    ResampleEngine --> ScalePosWeight
+
+    NoResample --> LR & RF & XGB
+    SMOTE_Fold --> LR & RF & XGB
+    ScalePosWeight --> XGB
+
+    XGB --> CascadedTriage
+    XGB --> SoftVoting
+
+    CascadedTriage --> SHAP
+    SoftVoting --> SHAP
+    SHAP --> WhatIf
+```
+
+---
+
+### 3. Detailed Component Remediation
+
+#### Component 1: Resolving the Static Feature Extractor Gap (46.5% Missing Features)
+* **The Problem**: In naive implementations, parsing only `AndroidManifest.xml` extracts permissions, leaving:
+  * 23 Intent actions (e.g., `android.intent.action.BOOT_COMPLETED`, `PACKAGE_REPLACED`, `SIG_STR`)
+  * 77 Dalvik API calls and classes (e.g., `Ljava.lang.Class.forName`, `ClassLoader`, `TelephonyManager.getDeviceId`, `Runtime.getRuntime`, `System.loadLibrary`)
+  permanently set to 0. This creates an artificial distribution shift between training and live inference.
+* **The Remedy**:
+  * Utilize `androguard.core.bytecodes.apk.APK` for manifest elements (permissions + intents).
+  * Utilize `androguard.core.bytecodes.dvm.DalvikVMFormat` and `androguard.core.analysis.analysis.Analysis` to inspect all class references (`dx.get_classes()`), method invocations (`dx.get_methods()`), and string constants.
+  * Implement an automated unit test `test_feature_extractor_coverage()` that scans real APKs and asserts that the ratio of extracted non-permission features is $> 0$.
+
+#### Component 2: Resolving the Dynamic Sandbox Mock & Constant $P_d$
+* **The Problem**: Returning Dalvik names like `sendTextMessage` when the dynamic model expects Linux kernel syscalls (`accept`, `bind`, `clone`, `ioctl`, `fork`) resulted in all-zero vectors. Thus $P_d$ was invariant, reducing the hybrid formula to $0.5 \cdot P_s + \text{const}$.
+* **The Remedy**:
+  * Align the dynamic feature schema with the 470 features of [feature_vectors_syscallsbinders_frequency_5_Cat.csv](file:///c:/ids/dataset/feature_vectors_syscallsbinders_frequency_5_Cat.csv) (150 Linux syscalls + 320 Binder/IPC categories).
+  * In live environments: Attach `strace -f -e trace=all` to the app PID or configure Frida scripts intercepting `libc.so` and `libbinder.so`.
+  * In offline evaluation: Implement a statistically grounded telemetry simulator sampling from real empirical distribution intervals of malware vs benign classes, explicitly labeled in the paper as **"Simulated Telemetry Protocol"** to maintain scientific credibility.
+
+#### Component 3: Rigorous Handling of Unpaired Datasets & Hybrid Evaluation
+* **The Problem**: Drebin (static) and CICMalDroid (dynamic) are disjoint datasets; merging row $i$ of Drebin with row $i$ of CICMalDroid creates synthetic chimera samples with no real-world validity.
+* **The Remedy**:
+  1. **Dual Independent Benchmarking**:
+     * Report Static XGBoost metrics on Drebin (7,254 samples).
+     * Report Dynamic XGBoost metrics on CICMalDroid (11,598 samples).
+  2. **Cascaded Triage Evaluation (Two-Stage Architecture)**:
+     * Evaluate Stage 1 (Static) at operating thresholds $\tau_1 = 0.35$ (benign cutoff) and $\tau_2 = 0.75$ (malware cutoff).
+     * Quantify the percentage of traffic resolved with zero sandbox overhead ($P_s < \tau_1$ or $P_s > \tau_2$), and the fraction routed to dynamic sandbox execution.
+  3. **Synthetic Paired Weight Sweep Ablation**:
+     * Evaluate late fusion $P_{\text{hybrid}} = w_s P_s + (1 - w_s) P_d$ across $w_s \in [0.0, 0.1, \dots, 1.0]$ to evaluate sensitivity and Pareto-optimal balance.
+
+#### Component 4: Class Imbalance & The SMOTE vs. `scale_pos_weight` Benchmark
+* **Empirical Reality of Workspace Data**:
+  * `drebin.csv`: 5,560 Malware (`S`) vs 1,694 Benign (`B`). **Benign is minority (23.35%)**.
+  * `CICMalDroid`: 9,803 Malware (Classes 1–4) vs 1,795 Benign (Class 5). **Benign is minority (15.48%)**.
+* **Methodological Protocol**:
+  * Drop duplicate samples prior to splitting.
+  * Use **Stratified 5-Fold Cross-Validation**.
+  * Apply SMOTE **strictly on the training folds**.
+  * Directly compare:
+    1. Baseline (No resampling)
+    2. SMOTE oversampling
+    3. XGBoost native `scale_pos_weight` (cost-sensitive loss without synthetic artifact generation)
+  * Citing recent research ([arXiv:2602.08744](https://arxiv.org/abs/2602.08744)), evaluate whether `scale_pos_weight` outperforms SMOTE on high-dimensional sparse tabular Android datasets.
+
+#### Component 5: What-If Counterfactual Remediation (Core Novelty)
+* **Design**:
+  * Standard machine learning classifiers output an opaque probability.
+  * Our remediation module connects **SHAP TreeExplainer** feature attributions directly to a **Counterfactual What-If Simulator**:
+    1. SHAP identifies top-contributing malicious features (e.g., `SEND_SMS`, `SYSTEM_ALERT_WINDOW`, `READ_PHONE_STATE`).
+    2. The simulator zero-masks these high-risk permissions sequentially.
+    3. The model re-evaluates the modified feature vector:
+       $$\Delta \text{Risk} = P_{\text{original}}(\text{Malware}) - P_{\text{counterfactual}}(\text{Malware})$$
+    4. Provides least-privilege remediation recommendations to developers or MDM (Mobile Device Management) enterprise administrators without requiring binary recompilation.
+
+---
+
+### 4. Mandatory Experimental Matrix & Ablations
+
+| Experiment ID | Configuration | Purpose | Expected Metrics |
+| :--- | :--- | :--- | :--- |
+| **EXP-1: Static Baseline** | Static 215 features, Drebin, 5-Fold CV | Assess static discriminative power | Acc, Prec, Rec, F1, ROC-AUC |
+| **EXP-2: Dynamic Baseline** | Dynamic 470 features, CICMalDroid, 5-Fold CV | Assess runtime behavioral discrimination | Acc, Prec, Rec, F1, ROC-AUC |
+| **EXP-3: Resampling Benchmark** | Compare No-SMOTE vs SMOTE vs `scale_pos_weight` on LR, RF, XGBoost | Answer Reviewer critique on class balancing efficacy | F1-Score, PR-AUC, False Positive Rate |
+| **EXP-4: Feature Gap Ablation** | All 215 features vs 115 permissions-only | Quantify the performance penalty of missing 46.5% bytecode features | Delta F1, Delta ROC-AUC |
+| **EXP-5: Dynamic Mock Ablation** | Flawed mock (constant $P_d$) vs Realistic dynamic | Prove the value of fixing the Reviewer 2 Point 1 bug | Delta Hybrid F1 |
+| **EXP-6: Fusion Weight Sweep** | Late fusion with $w_s \in [0.0, 1.0]$ in increments of 0.1 | Identify optimal balance between static and dynamic signals | ROC-AUC curve vs $w_s$ |
+| **EXP-7: Cascaded Triage** | Two-stage thresholding ($\tau_1 = 0.35, \tau_2 = 0.75$) | Measure latency and sandbox reduction rate | % Samples sandboxed, Triage Accuracy |
+| **EXP-8: What-If Remediation** | Top-K SHAP permission masking on malware test set | Demonstrate practical security remediation utility | Average Risk Reduction ($\Delta P$) |
+
+---
+
+### 5. Paper Revision & Academic Polish Checklist
+
+* [x] **Keywords**: Replace ad-hoc terms with 5 standardized keywords: *Android Security, Hybrid Intrusion Detection, XGBoost, Explainable AI (SHAP), Counterfactual Remediation*.
+* [x] **Visuals**: Replace ASCII sketches with high-resolution 300 DPI vector figures (PDF/SVG/PNG).
+* [x] **Abstract & Conclusion**: Strip all inline citation keys (`[1]`, `[2]`) from Abstract and Conclusion sections.
+* [x] **Empirical Integrity**: Remove all speculative phrasing (e.g., *"performance is expected to be"*). Report strictly recorded experimental numbers.
+* [x] **Future Work**: Eradicate placeholder expressions such as *"populate the tables"*. Focus Future Work on live on-device LLM-assisted reverse engineering and hardware-assisted hypervisor tracing.
+* [x] **Reference Verification**: Verify all bibliographic entries (Wu et al., Drebin, CICMalDroid, XGBoost, SHAP, Optuna) with verifiable DOIs/arXiv identifiers.

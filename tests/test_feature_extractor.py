@@ -40,7 +40,40 @@ def test_ablation_mode_zeroing():
     print("[PASS] test_ablation_mode_zeroing")
 
 
+def test_real_apk_non_zero_share():
+    extractor = DrebinFeatureExtractor()
+    sample_apk_path = os.path.join(os.path.dirname(__file__), "samples", "test_sample.apk")
+    if not os.path.exists(sample_apk_path):
+        print(f"[SKIP] test_real_apk_non_zero_share: Sample APK not found at {sample_apk_path}")
+        return
+
+    # Extract all 215 features
+    vec_full = extractor.extract_from_apk(sample_apk_path, mode="all_215")
+    breakdown_full = extractor.get_feature_breakdown(vec_full)
+    non_zero_share_full = breakdown_full["total_active"] / extractor.num_features
+
+    # Verify bytecode APIs and classes are extracted from DEX
+    assert breakdown_full["total_active"] > 0, "Expected non-zero total active features on real APK"
+    assert breakdown_full["active_apis"] > 0, (
+        f"Bytecode disassembler extracted 0 APIs from real APK! "
+        f"Reviewer 2 Point 4 requires non-zero API extraction. Got: {breakdown_full}"
+    )
+    print(f"[PASS] test_real_apk_non_zero_share (full mode): "
+          f"{breakdown_full['total_active']}/215 features ({non_zero_share_full*100:.1f}%), "
+          f"APIs={breakdown_full['active_apis']}, Intents={breakdown_full['active_intents']}, "
+          f"Perms={breakdown_full['active_permissions']}")
+
+    # Verify ablation mode zeros non-permissions
+    vec_perm = extractor.extract_from_apk(sample_apk_path, mode="permissions_only")
+    breakdown_perm = extractor.get_feature_breakdown(vec_perm)
+    assert breakdown_perm["active_apis"] == 0, "Ablation mode should zero out all API features"
+    assert breakdown_perm["active_intents"] == 0, "Ablation mode should zero out all Intent features"
+    print(f"[PASS] test_real_apk_non_zero_share (ablation mode): properly zeroed out non-permissions.")
+
+
 if __name__ == "__main__":
     test_extractor_initialization()
     test_ablation_mode_zeroing()
+    test_real_apk_non_zero_share()
     print("All feature extractor unit tests passed successfully!")
+

@@ -132,26 +132,53 @@ class DrebinFeatureExtractor:
 
         # 3. Extract Dalvik Bytecode API Calls and Classes
         try:
-            class_names = set()
-            method_names = set()
+            class_tokens = set()
+            method_tokens = set()
             dex_strings = set()
 
-            dex_blobs = a.get_all_dex()
+            dex_blobs = list(a.get_all_dex())
             for dex in dex_blobs:
                 d = DEX(dex)
+                # 3a. Classes
                 for cname in d.get_classes_names():
-                    class_names.add(cname)
+                    class_tokens.add(cname)
+                    # Normalize: 'Landroid/telephony/TelephonyManager;' -> 'Landroid.telephony.TelephonyManager'
+                    c_dot = cname.replace('/', '.').rstrip(';')
+                    class_tokens.add(c_dot)
+                    # Without leading 'L'
+                    c_clean = c_dot.lstrip('L')
+                    class_tokens.add(c_clean)
+                    # Short class name: 'TelephonyManager'
+                    short_c = c_clean.split('.')[-1]
+                    class_tokens.add(short_c)
+
+                # 3b. Methods & Invocations
                 for method in d.get_methods():
-                    method_names.add(f"{method.get_class_name()}->{method.get_name()}")
+                    m_name = method.get_name()
+                    c_raw = method.get_class_name()
+                    c_dot = c_raw.replace('/', '.').rstrip(';')
+                    c_clean = c_dot.lstrip('L')
+                    short_c = c_clean.split('.')[-1]
+
+                    method_tokens.add(f"{c_raw}->{m_name}")
+                    method_tokens.add(f"{c_dot}.{m_name}")
+                    method_tokens.add(f"{c_clean}.{m_name}")
+                    method_tokens.add(f"{short_c}.{m_name}")
+                    method_tokens.add(m_name)
+
+                # 3c. DEX string pool
                 dex_strings.update(d.get_strings())
 
-            # Efficient lookup for Drebin API features
-            all_classes_str = " ".join(class_names)
-            all_methods_str = " ".join(method_names)
+            # Aggregate corpus for fast lookup
+            combined_corpus = " ".join(class_tokens) + " " + " ".join(method_tokens)
 
             for api_feat in self.api_calls:
                 idx = self.feature_index[api_feat]
-                if api_feat in all_classes_str or api_feat in all_methods_str or api_feat in dex_strings:
+                # Check direct match in combined corpus or string pool
+                if (api_feat in combined_corpus or 
+                    api_feat in dex_strings or 
+                    api_feat in class_tokens or 
+                    api_feat in method_tokens):
                     vector[idx] = 1
         except Exception as e:
             logger.warning("Could not extract DEX bytecode APIs: %s", e)

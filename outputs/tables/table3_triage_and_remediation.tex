@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\caption{Empirical Evaluation of Cascaded Triage and What-If Counterfactual Remediation}
+\label{tab:triage_and_remediation}
+\begin{tabular}{lc}
+\hline
+\textbf{Evaluation Metric} & \textbf{Value} \\
+\hline
+\multicolumn{2}{l}{\textbf{Part A: Cascaded Triage Efficiency ($\tau_1=0.35, \tau_2=0.75$)}} \\
+Stage 1 (Static Fast Filter) Resolution Rate & 87.52\% \\
+Stage 2 (Dynamic Sandbox) Invocation Rate & 12.48\% \\
+Two-Stage Triage Classification Accuracy & 86.88\% \\
+\hline
+\multicolumn{2}{l}{\textbf{Part B: What-If Counterfactual Policy Remediation}} \\
+Evaluated Malware Test Cohort & 98 \\
+Benign Conversion Rate (Zero Recompilation) & \textbf{26.53\%} \\
+Average Malware Probability Reduction ($\Delta P$) & \textbf{19.45\%} \\
+Average High-Risk Permissions Revoked & 7.3 \\
+\hline
+\end{tabular}
+\end{table}
