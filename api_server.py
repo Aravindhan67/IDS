@@ -372,6 +372,7 @@ async def scan_apk_file(
     """
     Accepts an uploaded APK package (and optional real execution strace log or simulation flag).
     Performs full multi-layer inspection with zero fabricated data.
+    Enforces bounded chunk streaming and guaranteed file cleanup.
     """
     if ML_RESOURCES.get("status") != "ready":
         raise HTTPException(
@@ -382,22 +383,36 @@ async def scan_apk_file(
     if not file.filename.lower().endswith(".apk"):
         raise HTTPException(status_code=400, detail="Only valid .apk Android packages are supported.")
 
-    # Save APK temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".apk") as tmp_file:
-        content = await file.read()
-        if len(content) > 100 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="APK file exceeds 100MB size limit.")
-        tmp_file.write(content)
-        tmp_path = tmp_file.name
-
+    MAX_APK_SIZE = 100 * 1024 * 1024
+    MAX_TRACE_SIZE = 10 * 1024 * 1024
+    tmp_path = None
     tmp_trace_path = None
-    if trace_file is not None:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".log") as tmp_t:
-            t_content = await trace_file.read()
-            tmp_t.write(t_content)
-            tmp_trace_path = tmp_t.name
 
     try:
+        # Stream APK in bounded 64KB chunks to prevent memory exhaustion
+        total_apk_bytes = 0
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".apk") as tmp_file:
+            tmp_path = tmp_file.name
+            while chunk := await file.read(64 * 1024):
+                total_apk_bytes += len(chunk)
+                if total_apk_bytes > MAX_APK_SIZE:
+                    raise HTTPException(status_code=413, detail="APK file exceeds 100MB size limit.")
+                tmp_file.write(chunk)
+
+        if total_apk_bytes == 0:
+            raise HTTPException(status_code=400, detail="Uploaded APK file is empty.")
+
+        # Stream optional trace file in bounded 64KB chunks
+        if trace_file is not None:
+            total_trace_bytes = 0
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".log") as tmp_t:
+                tmp_trace_path = tmp_t.name
+                while chunk := await trace_file.read(64 * 1024):
+                    total_trace_bytes += len(chunk)
+                    if total_trace_bytes > MAX_TRACE_SIZE:
+                        raise HTTPException(status_code=413, detail="Trace file exceeds 10MB size limit.")
+                    tmp_t.write(chunk)
+
         # Layer 0: Honest VirusTotal Signature Lookup (Computed on real APK bytes)
         vt_res = ML_RESOURCES["vt_client"].analyze_apk_file(tmp_path)
         sha256_hash = vt_res.get("file_hashes", {}).get("sha256", "N/A")
@@ -577,17 +592,22 @@ async def scan_trace_file(file: UploadFile = File(...)):
 
     # Size limit: 10MB
     MAX_TRACE_SIZE = 10 * 1024 * 1024
-    content = await file.read()
-    if len(content) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded trace file is empty.")
-    if len(content) > MAX_TRACE_SIZE:
-        raise HTTPException(status_code=413, detail=f"Trace file exceeds {MAX_TRACE_SIZE // (1024*1024)}MB size limit.")
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".log") as tmp_file:
-        tmp_file.write(content)
-        tmp_path = tmp_file.name
+    tmp_path = None
 
     try:
+        # Stream trace file in bounded 64KB chunks to prevent memory exhaustion
+        total_bytes = 0
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".log") as tmp_file:
+            tmp_path = tmp_file.name
+            while chunk := await file.read(64 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_TRACE_SIZE:
+                    raise HTTPException(status_code=413, detail=f"Trace file exceeds {MAX_TRACE_SIZE // (1024*1024)}MB size limit.")
+                tmp_file.write(chunk)
+
+        if total_bytes == 0:
+            raise HTTPException(status_code=400, detail="Uploaded trace file is empty.")
+
         engine = ML_RESOURCES["dyn_engine"]
         parsed = engine.parse_strace_log_detailed(tmp_path)
         status = parsed["status"]
@@ -719,7 +739,7 @@ def scan_benchmark_sample(req: SampleScanRequest):
     if key not in SAMPLE_CATALOG:
         valid_keys = ", ".join(list(SAMPLE_CATALOG.keys()))
         raise HTTPException(
-            status_code=404,
+            status_code=400,
             detail=f"Sample '{req.sample_type}' not found in catalog. Valid benchmark sample types: {valid_keys}"
         )
 

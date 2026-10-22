@@ -67,9 +67,9 @@ def test_api_scan_sample(client):
 
 
 def test_api_scan_sample_invalid_identifier(client):
-    # Invalid sample type returns 404 client error
+    # Invalid sample type returns 400 client error
     res = client.post("/api/scan-sample", json={"sample_type": "nonexistent_trojan_xyz"})
-    assert res.status_code == 404
+    assert res.status_code == 400
     assert "not found in catalog" in res.json()["detail"].lower()
 
 
@@ -211,6 +211,12 @@ def test_api_scan_apk_validation(client):
     res_bad = client.post("/api/scan-apk", files=files)
     assert res_bad.status_code == 400
     assert ".apk" in res_bad.json()["detail"].lower()
+
+    # Reject empty apk
+    files_empty = {"file": ("empty.apk", io.BytesIO(b""), "application/vnd.android.package-archive")}
+    res_empty = client.post("/api/scan-apk", files=files_empty)
+    assert res_empty.status_code == 400
+    assert "empty" in res_empty.json()["detail"].lower()
 
 
 def test_api_scan_apk_real_sample(client):
