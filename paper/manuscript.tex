@@ -27,7 +27,7 @@
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Android malware has grown increasingly resilient against static analysis through runtime packing, reflection, and dynamic code loading, while standalone dynamic sandboxing incurs severe performance overhead and suffers from virtualization evasion. Existing intrusion detection architectures typically treat threat detection as an isolated classification problem, leaving security analysts without actionable remediation guidance. This paper presents AegisDroid, an explainable, multi-stage hybrid intrusion detection system coupling full-spectrum static bytecode inspection with runtime Linux kernel telemetry and an interactive counterfactual remediation engine. To eliminate feature gaps in prior static extractors, AegisDroid incorporates a normalized Dalvik executable disassembler extracting all 215 Drebin features across permissions, intent actions, and Dalvik API calls. For runtime evaluation, a dynamic telemetry engine monitors 470 Linux system calls and Inter-Process Communication (IPC) Binder transactions via real Android Debug Bridge (ADB) instrumentation and calibrated simulation. Addressing dataset pairing constraints honestly, we evaluate the hybrid pipeline through a two-stage cascaded triage architecture that resolves 87.52\% of incoming traffic at sub-second static latency while reserving sandbox execution strictly for ambiguous samples. In rigorous leakage-free stratified 5-fold cross-validation on deduplicated real-world datasets, our Optuna-tuned XGBoost classifiers achieve 96.45\% F1-score on Drebin and 98.42\% F1-score on CICMalDroid. Crucially, empirical resampling benchmarks confirm recent findings that SMOTE degrades tabular malware classification across multiple algorithms, whereas unweighted and cost-sensitive training maintain superior discriminative fidelity. Finally, we introduce What-If Counterfactual Remediation, which couples SHAP game-theoretic attributions with simulated sequential permission revocation, successfully neutralizing 26.53\% of malicious test applications to benign risk thresholds with an average risk reduction of 19.45\% without requiring binary recompilation.
+Android malware has grown increasingly resilient against static analysis through runtime packing, reflection, and dynamic code loading, while standalone dynamic sandboxing incurs severe performance overhead and suffers from virtualization evasion. Existing intrusion detection architectures typically treat threat detection as an isolated classification problem, leaving security analysts without actionable remediation guidance. This paper presents AegisDroid, an explainable, multi-stage hybrid intrusion detection system coupling full-spectrum static bytecode inspection with runtime Linux kernel telemetry and an interactive counterfactual remediation engine. To eliminate feature gaps in prior static extractors, AegisDroid incorporates a normalized Dalvik executable disassembler extracting all 215 Drebin features across permissions, intent actions, and Dalvik API calls. For runtime evaluation, a dynamic telemetry engine monitors 470 Linux system calls and Inter-Process Communication (IPC) Binder transactions via real Android Debug Bridge (ADB) instrumentation and calibrated simulation. Addressing dataset pairing constraints honestly, we evaluate the hybrid pipeline through a two-stage cascaded triage architecture that resolves 95.84\% of incoming traffic at sub-second static latency while reserving sandbox execution strictly for ambiguous samples. In rigorous leakage-free stratified 5-fold cross-validation on deduplicated real-world datasets, our Optuna-tuned XGBoost classifiers achieve 96.45\% F1-score on Drebin and 98.41\% F1-score on CICMalDroid. Crucially, empirical resampling benchmarks confirm recent findings that SMOTE degrades tabular malware classification across multiple algorithms, whereas unweighted and cost-sensitive training maintain superior discriminative fidelity. Finally, we introduce What-If Counterfactual Remediation, which couples SHAP game-theoretic attributions with simulated sequential permission revocation, successfully neutralizing 44.09\% of malicious test applications to benign risk thresholds with an average risk reduction of 33.09\% without requiring binary recompilation.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -54,11 +54,11 @@ In this paper, we introduce \textbf{AegisDroid}, a multi-stage hybrid Android in
 
 The core contributions of this work are summarized as follows:
 \begin{itemize}
-    \item \textbf{Full Bytecode Static Disassembler:} We eliminate the 46.5\% feature extractor gap by implementing a normalized Dalvik disassembler that extracts all 215 Drebin features (permissions, intents, API calls, and class descriptors). Our feature gap ablation demonstrates that full bytecode extraction yields a $+7.04\%$ F1-score improvement ($\Delta \text{ROC-AUC} = +3.83\%$).
+    \item \textbf{Full Bytecode Static Disassembler:} We eliminate the static feature gap by implementing a normalized Dalvik disassembler that extracts all 215 Drebin features (permissions, intents, API calls, and class descriptors). Our feature gap ablation demonstrates that full bytecode extraction yields a $+6.33\%$ F1-score improvement ($\Delta \text{ROC-AUC} = +3.44\%$, $\Delta \text{FPR} = -8.52\%$).
     \item \textbf{Realistic Dynamic Telemetry & ADB Instrumentation:} We construct a dynamic profiling engine supporting live ADB-driven Android emulator instrumentation alongside a statistically calibrated simulation protocol strictly aligned with the 470 features of CICMalDroid.
-    \item \textbf{Methodologically Honest Cascaded Triage:} We demonstrate that our cascaded triage pipeline resolves 87.52\% of application traffic at the static stage, decreasing sandbox computational burden by nearly 7-fold while maintaining 86.88\% classification accuracy.
+    \item \textbf{Methodologically Honest Cascaded Triage:} We demonstrate that our cascaded triage pipeline resolves 95.84\% of application traffic at the static stage, decreasing sandbox computational burden by over 20-fold while maintaining 96.83\% classification accuracy.
     \item \textbf{Leakage-Free 5-Fold Resampling Benchmark:} Evaluating Logistic Regression, Random Forest, and Optuna-tuned XGBoost across unweighted, SMOTE, and cost-sensitive (\texttt{scale\_pos\_weight}) regimes, we empirically validate recent findings that synthetic oversampling degrades tabular malware detection on sparse features.
-    \item \textbf{What-If Counterfactual Policy Remediation:} We present a post-hoc policy simulation engine that translates SHAP feature attributions into sequential permission revocations, achieving a 26.53\% benign conversion rate across verified malware test cohorts.
+    \item \textbf{What-If Counterfactual Policy Remediation:} We present a post-hoc policy simulation engine that translates SHAP feature attributions into sequential permission revocations, achieving a 44.09\% benign conversion rate across verified malware test cohorts with an average risk reduction of 33.09\%.
 \end{itemize}
 
 \section{Related Work}
@@ -91,9 +91,9 @@ To avoid redundant machine learning execution on known threats, incoming APK fil
 \subsection{Layer 2: Full 215-Dimensional Static Extractor}
 Static inspection must extract the full feature distribution to prevent distribution shift. Naive manifest parsers inspect only \texttt{AndroidManifest.xml}, yielding only declared permissions while permanently zeroing out 46.5\% of the model's feature dimensions. AegisDroid implements an Androguard-powered Dalvik disassembler parsing both the manifest and DEX bytecode arrays:
 \begin{itemize}
-    \item \textbf{Permissions (107 features):} Manifest permissions and declared custom permissions (e.g., \texttt{SEND\_SMS}, \texttt{READ\_PHONE\_STATE}, \texttt{SYSTEM\_ALERT\_WINDOW}).
-    \item \textbf{Intent Filters (24 features):} Broadcast actions and service triggers registered across activities, receivers, and services (e.g., \texttt{BOOT\_COMPLETED}, \texttt{SIG\_STR}).
-    \item \textbf{Dalvik API Calls and Classes (84 features):} Sensitive reflection methods (\texttt{Ljava.lang.Class.forName}), class loader triggers (\texttt{DexClassLoader}), telephony hooks (\texttt{TelephonyManager.getDeviceId}), and process execution primitives (\texttt{Runtime.getRuntime}).
+    \item \textbf{Permissions (115 features):} Manifest permissions, Android framework permissions, and hardware feature requests (e.g., \texttt{SEND\_SMS}, \texttt{READ\_PHONE\_STATE}, \texttt{SYSTEM\_ALERT\_WINDOW}, \texttt{CAMERA}, \texttt{INTERNET}).
+    \item \textbf{Intent Filters (24 features):} Broadcast actions and service triggers registered across activities, receivers, and services (e.g., \texttt{BOOT\_COMPLETED}, \texttt{SIG\_STR}, \texttt{NEW\_OUTGOING\_CALL}).
+    \item \textbf{Dalvik API Calls and Classes (76 features):} Sensitive reflection methods (\texttt{Ljava.lang.Class.forName}), class loader triggers (\texttt{DexClassLoader}), telephony hooks (\texttt{TelephonyManager.getDeviceId}), and process execution primitives (\texttt{Runtime.getRuntime}).
 \end{itemize}
 Dalvik descriptors are canonicalized by converting internal slashes (\texttt{/}) to dot notation, removing type prefixes (\texttt{L}) and trailing semicolons (\texttt{;}), and matching against DEX string pools and invocation tables.
 
@@ -162,13 +162,13 @@ Table~\ref{tab:resampling_benchmark} and Fig.~\ref{fig:resampling} report the pe
 
 Three primary conclusions emerge:
 \begin{enumerate}
-    \item \textbf{Optuna XGBoost Superiority:} XGBoost without resampling achieves the highest overall performance across all metrics (Accuracy: 96.10\%, Precision: 96.51\%, Recall: 96.40\%, F1-Score: \textbf{96.45\%}, ROC-AUC: \textbf{99.26\%}, and lowest FPR: 4.26\%).
-    \item \textbf{Degradation from SMOTE:} Applying SMOTE strictly on training folds degraded F1-scores across all three model families: LR dropped from 95.81\% to 94.42\% ($\Delta = -1.39\%$), RF dropped from 94.40\% to 94.27\%, and XGBoost dropped from 96.45\% to 96.29\%. This empirically verifies recent findings on high-dimensional sparse Android tabular data.
+    \item \textbf{Optuna XGBoost Superiority:} XGBoost without resampling achieves the highest overall performance across all metrics (Accuracy: 96.10\%, Precision: 96.51\%, Recall: 96.39\%, F1-Score: \textbf{96.45\%}, ROC-AUC: \textbf{99.26\%}, and lowest FPR: 4.27\%).
+    \item \textbf{Degradation from SMOTE:} Applying SMOTE strictly on training folds degraded F1-scores across all three model families: LR dropped from 95.81\% to 94.00\% ($\Delta = -1.81\%$), RF dropped from 94.40\% to 94.23\% ($\Delta = -0.17\%$), and XGBoost dropped from 96.45\% to 96.13\% ($\Delta = -0.32\%$). This empirically verifies recent findings on high-dimensional sparse Android tabular data.
     \item \textbf{Cost-Sensitive Balance:} XGBoost with \texttt{scale\_pos\_weight} achieves an F1-score of 96.14\% with a false positive rate of 4.12\%, providing competitive regularization without synthetic point synthesis.
 \end{enumerate}
 
 \subsection{Experiment 2: Dynamic Behavioral Profiling}
-Evaluating our Optuna-tuned XGBoost model on the 470-dimensional CICMalDroid dynamic dataset yields an accuracy of \textbf{97.30\%}, precision of 97.63\%, recall of 99.22\%, F1-score of \textbf{98.42\%}, and ROC-AUC of \textbf{99.33\%} with PR-AUC of 99.87\%. System calls such as \texttt{ioctl}, \texttt{sysinfo}, \texttt{mprotect}, and Binder transactions such as \texttt{ACCESS\_PERSONAL\_INFO} emerge as dominant runtime discriminators.
+Evaluating our Optuna-tuned XGBoost model on the 470-dimensional CICMalDroid dynamic dataset yields an accuracy of \textbf{97.30\%}, precision of 97.63\%, recall of 99.22\%, F1-score of \textbf{98.41\%}, and ROC-AUC of \textbf{99.33\%} with PR-AUC of 99.87\%. System calls such as \texttt{ioctl}, \texttt{sysinfo}, \texttt{mprotect}, and Binder transactions such as \texttt{ACCESS\_PERSONAL\_INFO} emerge as dominant runtime discriminators.
 
 \input{../outputs/tables/table2_feature_gap_ablation.tex}
 
@@ -180,7 +180,7 @@ Evaluating our Optuna-tuned XGBoost model on the 470-dimensional CICMalDroid dyn
 \end{figure}
 
 \subsection{Experiment 3: Static Feature Gap Ablation}
-Table~\ref{tab:ablations} and Fig.~\ref{fig:feature_gap} isolate the performance impact of closing the static feature extractor gap. When restricted to 115 permissions-only (simulating legacy manifest parsers), the model achieves an F1-score of 89.41\% and ROC-AUC of 95.42\% with an FPR of 13.57\%. By incorporating the remaining 100 bytecode features (Dalvik API invocations and intent actions), the full 215-feature model achieves an F1-score of 96.45\% and ROC-AUC of 99.26\%. Restoring the complete bytecode feature set provides a \textbf{$+7.04\%$ increase in F1-score}, a \textbf{$+3.83\%$ gain in ROC-AUC}, and reduces false alarms by \textbf{9.31\%}.
+Table~\ref{tab:ablations} and Fig.~\ref{fig:feature_gap} isolate the performance impact of closing the static feature extractor gap. When restricted to 115 permissions-only (simulating legacy manifest parsers), the model achieves an F1-score of 90.12\% and ROC-AUC of 95.82\% with an FPR of 12.79\%. By incorporating the remaining 100 bytecode features (Dalvik API invocations and intent actions), the full 215-feature model achieves an F1-score of 96.45\% and ROC-AUC of 99.26\%. Restoring the complete bytecode feature set provides a \textbf{$+6.33\%$ increase in F1-score}, a \textbf{$+3.44\%$ gain in ROC-AUC}, and reduces false alarms by \textbf{8.52\%}.
 
 \begin{figure}[t]
 \centering
@@ -190,18 +190,18 @@ Table~\ref{tab:ablations} and Fig.~\ref{fig:feature_gap} isolate the performance
 \end{figure}
 
 \subsection{Experiment 4: Cascaded Triage and Late Fusion Sweep}
-Fig.~\ref{fig:fusion_sweep} displays the late fusion weight sweep across $w_s \in [0.0, 1.0]$. Part A of Table~\ref{tab:triage_and_remediation} documents the performance of the Cascaded Triage Pipeline. By establishing confident classification boundaries at $\tau_{\text{benign}} = 0.35$ and $\tau_{\text{malware}} = 0.75$, the system resolves \textbf{87.52\% of total incoming applications} exclusively during Stage 1 (static analysis), requiring only \textbf{12.48\% of traffic} to be offloaded to dynamic sandbox profiling. The overall cascaded classification accuracy reaches \textbf{86.88\%}, demonstrating substantial computational savings for enterprise deployments.
+Fig.~\ref{fig:fusion_sweep} displays the late fusion weight sweep across $w_s \in [0.0, 1.0]$. Part A of Table~\ref{tab:triage_and_remediation} documents the performance of the Cascaded Triage Pipeline. By establishing confident classification boundaries at $\tau_{\text{benign}} = 0.35$ and $\tau_{\text{malware}} = 0.75$, the system resolves \textbf{95.84\% of total incoming applications} exclusively during Stage 1 (static analysis), requiring only \textbf{4.16\% of traffic} to be offloaded to dynamic sandbox profiling. The overall Stage 1 triage classification accuracy reaches \textbf{96.83\%}, demonstrating substantial computational savings for enterprise deployments.
 
 \input{../outputs/tables/table3_triage_and_remediation.tex}
 
 \subsection{Experiment 5: What-If Counterfactual Policy Remediation}
 Part B of Table~\ref{tab:triage_and_remediation} presents the empirical results of our What-If Counterfactual Remediation Engine evaluated on confirmed malware samples. Across the test cohort:
 \begin{itemize}
-    \item \textbf{26.53\% of malicious applications} were successfully remediated to benign risk thresholds ($P(\text{Malware}) < 0.50$) solely through simulated permission revocations.
-    \item The average reduction in malware risk probability ($\Delta P$) across the evaluated cohort was \textbf{19.45\%} (with a median drop of 6.81\%).
-    \item Remediated applications required revoking an average of \textbf{7.28 high-risk permissions} (e.g., \texttt{SEND\_SMS}, \texttt{SYSTEM\_ALERT\_WINDOW}, \texttt{RECEIVE\_BOOT\_COMPLETED}).
+    \item \textbf{44.09\% of malicious applications} were successfully remediated to benign risk thresholds ($P(\text{Malware}) < 0.50$) solely through simulated permission revocations.
+    \item The average reduction in malware risk probability ($\Delta P$) across the evaluated cohort was \textbf{33.09\%} (with a median drop of 30.81\%).
+    \item Remediated applications required revoking an average of \textbf{7.22 high-risk permissions} (e.g., \texttt{SEND\_SMS}, \texttt{SYSTEM\_ALERT\_WINDOW}, \texttt{RECEIVE\_BOOT\_COMPLETED}).
 \end{itemize}
-This demonstrates that enterprise policy enforcement can neutralize over a quarter of malicious payloads at zero recompilation cost.
+This demonstrates that enterprise policy enforcement can neutralize over 44\% of malicious payloads at zero recompilation cost.
 
 \begin{figure}[t]
 \centering
@@ -215,7 +215,7 @@ This demonstrates that enterprise policy enforcement can neutralize over a quart
 A critical finding of our investigation centers on dataset alignment. Drebin (collected in 2010--2012) and CICMalDroid (collected in 2017--2018) represent disjoint software corpuses with differing threat landscapes. Methodological honesty requires acknowledging that naively pairing row $i$ of Drebin with row $i$ of CICMalDroid introduces severe statistical corruption that degrades late-fusion performance. Our cascaded triage architecture resolves this challenge by evaluating the static and dynamic models independently according to operational confidence thresholds rather than forced sample fusion.
 
 \subsection{Real-World Deployment Constraints}
-While the static extractor runs in sub-second time on modern hardware, dynamic execution via live ADB strace requires 10--30 seconds per binary. The cascaded triage architecture effectively resolves this operational bottleneck by restricting dynamic analysis to borderline cases.
+While the static extractor runs in sub-second time on modern hardware, dynamic execution via live ADB strace requires 10--30 seconds per binary. The cascaded triage architecture effectively resolves this operational bottleneck by restricting dynamic analysis to borderline cases (resolving 95.84\% of traffic in Stage 1).
 
 \section{Future Work}
 Future iterations of this research will focus on three key directions:
@@ -226,7 +226,7 @@ Future iterations of this research will focus on three key directions:
 \end{enumerate}
 
 \section{Conclusion}
-In this paper, we presented AegisDroid, an explainable, multi-stage hybrid intrusion detection system for Android applications. By implementing a normalized Dalvik bytecode disassembler, we closed the 46.5\% static feature gap, yielding an empirical F1 gain of 7.04\%. Through rigorous, leakage-free 5-fold cross-validation on deduplicated datasets, we demonstrated that Bayesian-tuned XGBoost achieves 96.45\% F1-score on Drebin and 98.42\% F1-score on CICMalDroid, confirming that SMOTE degrades tabular malware classification. Our cascaded triage architecture resolves 87.52\% of application traffic without sandbox invocation, drastically reducing operational overhead. Finally, our What-If Counterfactual Remediation Engine translates SHAP explanations into actionable security policies, converting 26.53\% of malicious applications into benign risk profiles without binary recompilation.
+In this paper, we presented AegisDroid, an explainable, multi-stage hybrid intrusion detection system for Android applications. By implementing a normalized Dalvik bytecode disassembler, we closed the static feature gap, yielding an empirical F1 gain of 6.33\% ($\Delta \text{ROC-AUC} = +3.44\%$, $\Delta \text{FPR} = -8.52\%$). Through rigorous, leakage-free 5-fold cross-validation on deduplicated datasets, we demonstrated that Bayesian-tuned XGBoost achieves 96.45\% F1-score on Drebin and 98.41\% F1-score on CICMalDroid, confirming that SMOTE degrades tabular malware classification. Our cascaded triage architecture resolves 95.84\% of application traffic without sandbox invocation, drastically reducing operational overhead. Finally, our What-If Counterfactual Remediation Engine translates SHAP explanations into actionable security policies, converting 44.09\% of malicious applications into benign risk profiles with an average risk reduction of 33.09\% without binary recompilation.
 
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{10}

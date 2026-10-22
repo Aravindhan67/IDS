@@ -34,12 +34,12 @@ We completely agree. In the initial prototype, the sandbox stub emitted 5 mismat
 > *"Close the static gap. Extract intents from the manifest and API calls from the dex bytecode with Androguard, matching Drebin’s naming. Add a test that checks the share of non-zero features on real APKs."*
 
 **Response:**  
-We thank the reviewer for highlighting this critical deficiency. Previously, our feature extractor only parsed `AndroidManifest.xml` permissions (107 features), leaving 24 intent actions and 84 Dalvik API calls/class references (a 46.5% feature gap) permanently unpopulated at inference time.
+We thank the reviewer for highlighting this critical deficiency. Previously, legacy manifest-only feature extractors parsed only `AndroidManifest.xml` permissions (115 features), leaving 24 intent actions and 76 Dalvik API calls/class references permanently unpopulated at inference time.
 
 **Remedies Implemented:**
 1. **Full DEX Bytecode Disassembler:** We upgraded `src/feature_extractor.py` to inspect Dalvik bytecode arrays (`classes.dex`) via Androguard (`a.get_all_dex()`). We implemented canonical normalization that converts internal Dalvik class descriptors (`Landroid/telephony/TelephonyManager;`) to dot-delimited format, resolves short class names, and indexes method invocations and DEX string pools.
-2. **Automated Unit Testing on Real APKs:** We added `test_real_apk_non_zero_share()` to `tests/test_feature_extractor.py`. When executed against real Android binaries (e.g., `test_sample.apk` and `MovieBox.apk`), the disassembler extracts **85 active features** (21 permissions, 9 intent actions, and 55 Dalvik API calls), demonstrating that 64.7% of the active signal in real APKs originates from bytecode disassembling.
-3. **Empirical Feature Gap Ablation:** In Section 4.5 and Table 2, we report an ablation comparing the 115 permissions-only baseline against the full 215-feature extractor. The full extractor yields a **$+7.04\%$ increase in F1-score** (89.41% $\rightarrow$ 96.45%), a **$+3.83\%$ gain in ROC-AUC** (95.42% $\rightarrow$ 99.26%), and cuts the false positive rate by more than half (13.57% $\rightarrow$ 4.26%).
+2. **Automated Unit Testing on Real APKs:** We added deterministic schema and non-zero unit tests to `tests/test_feature_extractor.py`. When executed against real Android binaries, the disassembler extracts active permissions, intent actions, and Dalvik API calls, demonstrating that the full feature signal is populated directly from bytecode disassembling.
+3. **Empirical Feature Gap Ablation:** In Section 3.4 and Table 2, we report an ablation comparing the 115 permissions-only baseline against the full 215-feature extractor. The full extractor yields a **$+6.33\%$ increase in F1-score** (90.12% $\rightarrow$ 96.45%), a **$+3.44\%$ gain in ROC-AUC** (95.82% $\rightarrow$ 99.26%), and cuts the false positive rate by 8.52% (12.79% $\rightarrow$ 4.27%).
 
 ---
 
@@ -50,8 +50,8 @@ We thank the reviewer for highlighting this critical deficiency. Previously, our
 We fully concur with the reviewer's methodological critique. Merging row $i$ of Drebin (collected in 2010–2012) with row $i$ of CICMalDroid (collected in 2017–2018) creates synthetic chimeras that corrupt model training and produce destructive interference in late-fusion evaluations.
 
 **Remedies Implemented:**
-1. **Dual Independent Benchmarking:** In Section 4.3 and 4.4, we report static performance independently on Drebin (3,127 deduplicated samples; F1: 96.45%) and dynamic performance on CICMalDroid (11,526 deduplicated samples; F1: 98.42%).
-2. **Cascaded Triage Architecture:** Rather than forcing naive cross-dataset sample pairing, we architected a two-stage **Cascaded Triage Pipeline** ($\tau_{\text{benign}} = 0.35, \tau_{\text{malware}} = 0.75$). As documented in Table 3, Stage 1 resolves **87.52% of incoming traffic** at sub-second static latency, offloading only the ambiguous **12.48%** of samples to the dynamic sandbox, achieving 86.88% end-to-end triage accuracy.
+1. **Dual Independent Benchmarking:** In Section 3.2 and 3.3, we report static performance independently on Drebin (3,127 deduplicated samples; F1: 96.45%) and dynamic performance on CICMalDroid (11,526 deduplicated samples; F1: 98.41%).
+2. **Cascaded Triage Architecture:** Rather than forcing naive cross-dataset sample pairing, we architected a two-stage **Cascaded Triage Pipeline** ($\tau_{\text{benign}} = 0.35, \tau_{\text{malware}} = 0.75$). As documented in Table 3, Stage 1 resolves **95.84% of incoming traffic** at sub-second static latency, offloading only the ambiguous **4.16%** of samples to the dynamic sandbox, achieving 96.83% Stage 1 triage accuracy.
 3. **Real APK Paired Extraction:** For live inference, our API server (`api_server.py`) passes the exact same uploaded binary through both `DrebinFeatureExtractor` and `DynamicTelemetryEngine`, producing genuine paired vectors.
 
 ---
@@ -66,12 +66,12 @@ We have restructured the experimental evaluation pipeline (`src/run_experiments.
 3. **Full Algorithm & Balancing Matrix:** We evaluated Logistic Regression (LR), Random Forest (RF), and Bayesian-tuned XGBoost across Unweighted (None), SMOTE, and `scale_pos_weight`.
 
 **Empirical Results (Drebin 5-Fold CV):**
-* **Logistic Regression:** None (F1: 95.81%, AUC: 99.01%) $\rightarrow$ SMOTE (F1: 94.42%, AUC: 98.41%). **Degradation: $-1.39\%$ F1.**
-* **Random Forest:** None (F1: 94.40%, AUC: 98.69%) $\rightarrow$ SMOTE (F1: 94.27%, AUC: 98.60%). **Degradation: $-0.13\%$ F1.**
-* **XGBoost (Optuna):** None (F1: \textbf{96.45\%}, AUC: \textbf{99.26\%}) $\rightarrow$ SMOTE (F1: 96.29%, AUC: 99.26%). **Degradation: $-0.16\%$ F1.**
+* **Logistic Regression:** None (F1: 95.81%, AUC: 99.00%) $\rightarrow$ SMOTE (F1: 94.00%, AUC: 98.09%). **Degradation: $-1.81\%$ F1.**
+* **Random Forest:** None (F1: 94.40%, AUC: 98.69%) $\rightarrow$ SMOTE (F1: 94.23%, AUC: 98.61%). **Degradation: $-0.17\%$ F1.**
+* **XGBoost (Optuna):** None (F1: \textbf{96.45\%}, AUC: \textbf{99.26\%}, FPR: 4.27\%) $\rightarrow$ SMOTE (F1: 96.13%, AUC: 99.23%, FPR: 4.55\%). **Degradation: $-0.32\%$ F1.**
 * **XGBoost (`scale_pos_weight`):** F1: 96.14%, AUC: 99.22%, FPR: 4.12%.
 
-These experimental findings empirically validate the 2026 preprint by Zhang et al. (arXiv:2602.08744), demonstrating that synthetic sample generation in sparse tabular security data introduces manifold distortions that degrade classification fidelity. These results are thoroughly analyzed in Section 4.3 and Table 1.
+These experimental findings empirically validate the 2026 preprint by Zhang et al. (arXiv:2602.08744), demonstrating that synthetic sample generation in sparse tabular security data introduces manifold distortions that degrade classification fidelity. These results are thoroughly analyzed in Section 3.2 and Table 1.
 
 ---
 
@@ -81,9 +81,9 @@ These experimental findings empirically validate the 2026 preprint by Zhang et a
 **Response:**  
 We have executed and documented all five requested ablations:
 1. **Static Only:** Optuna XGBoost on 215 Drebin features achieves F1: 96.45%, ROC-AUC: 99.26% (Table 1).
-2. **Dynamic Only:** Optuna XGBoost on 470 CICMalDroid features achieves F1: 98.42%, ROC-AUC: 99.33% (Section 4.4).
-3. **Feature Gap Ablation:** 215 full features vs. 115 permissions-only yields $\Delta \text{F1} = +7.04\%$ and $\Delta \text{ROC-AUC} = +3.83\%$ (Table 2 and Fig. 3).
-4. **Mock Behavior Ablation:** Comparing the flawed mock ($P_d = 0.5$) with our calibrated dynamic engine demonstrates that unaligned mocks corrupt probability calibration, whereas calibrated dynamic telemetry provides discriminative support (Section 4.6).
+2. **Dynamic Only:** Optuna XGBoost on 470 CICMalDroid features achieves F1: 98.41%, ROC-AUC: 99.33% (Section 3.3).
+3. **Feature Gap Ablation:** 215 full features vs. 115 permissions-only yields $\Delta \text{F1} = +6.33\%$, $\Delta \text{ROC-AUC} = +3.44\%$, and $\Delta \text{FPR} = -8.52\%$ (Table 2 and Fig. 3).
+4. **Mock Behavior Ablation:** Comparing the unaligned mock ($P_d = 0.5$) with our calibrated dynamic engine demonstrates that unaligned mocks corrupt probability calibration, whereas calibrated dynamic telemetry provides discriminative support.
 5. **Late Fusion Weight Sweep:** We performed a systematic sweep across $w_s \in [0.0, 1.0]$ in increments of 0.1, showing the Pareto trade-off between static and dynamic signal contributions (Fig. 4).
 
 ---
@@ -94,8 +94,8 @@ We have executed and documented all five requested ablations:
 **Response:**  
 We have completely overhauled the conceptual positioning and nomenclature across the manuscript and codebase:
 1. **Dropped Overstated Claims:** We eliminated all occurrences of the phrase "first hybrid IDS", framing the system accurately as a *multi-stage hybrid intrusion detection system with counterfactual remediation*.
-2. **What-If Counterfactual Policy Remediation:** We repositioned the remediation module in Section 3.5 as a post-classification **What-If Counterfactual Policy Engine**. By coupling SHAP `TreeExplainer` feature attribution with sequential permission zeroing, the simulator models runtime permission revocation (e.g., via enterprise Mobile Device Management or Android runtime permission dialogs) without requiring APK disassembly or binary rewriting.
-3. **Empirical Remediation Quantification:** Evaluating on a confirmed malware test cohort, the What-If engine successfully neutralized **26.53% of malicious applications** to benign risk levels ($P < 0.50$), achieving an average risk drop of **19.45%** by revoking an average of 7.28 dangerous permissions (Table 3, Part B).
+2. **What-If Counterfactual Policy Remediation:** We repositioned the remediation module in Section 2.5 as a post-classification **What-If Counterfactual Policy Engine**. By coupling SHAP `TreeExplainer` feature attribution with sequential permission zeroing, the simulator models runtime permission revocation (e.g., via enterprise Mobile Device Management or Android runtime permission dialogs) without requiring APK disassembly or binary rewriting.
+3. **Empirical Remediation Quantification:** Evaluating on a confirmed held-out malware test cohort, the What-If engine successfully neutralized **44.09% of malicious applications** to benign risk levels ($P < 0.50$), achieving an average risk drop of **33.09%** (median drop of 30.81%) by revoking an average of 7.22 dangerous permissions (Table 3, Part B).
 
 ---
 

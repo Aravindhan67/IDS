@@ -205,78 +205,91 @@ export default function AegisDroidHIDS() {
                   <span className="badge" style={{ color: "var(--purple-500)" }}>
                     {scanResult.dynamic_analysis.data_source || scanResult.dynamic_analysis.dataset_source || "CICMalDroid 470 Dimensions"}
                   </span>
-                  <span className="badge" style={{ color: scanResult.dynamic_analysis.malware_probability > 0.5 ? "var(--rose-400)" : "var(--emerald-400)" }}>
-                    {scanResult.dynamic_analysis.malware_probability > 0.5 ? "Behavioral Threat Detected" : "Normal Execution Pattern"}
+                  <span className="badge" style={{ color: scanResult.dynamic_analysis.status === "unavailable" ? "var(--amber-400)" : (scanResult.dynamic_analysis.malware_probability > 0.5 ? "var(--rose-400)" : "var(--emerald-400)") }}>
+                    {scanResult.dynamic_analysis.status === "unavailable" ? "Dynamic Analysis Unavailable" : (scanResult.dynamic_analysis.malware_probability > 0.5 ? "Behavioral Threat Detected" : "Normal Execution Pattern")}
                   </span>
                 </div>
               </div>
 
               {/* Dynamic Value Row */}
-              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr", gap: "1.5rem", marginBottom: "1.75rem", background: "rgba(11, 15, 25, 0.6)", padding: "1.25rem", borderRadius: "var(--radius-sm)" }}>
-                <div>
-                  <div className="stat-label">Dynamic Malware Risk Probability</div>
-                  <div style={{ fontSize: "2.8rem", fontWeight: 800, fontFamily: "JetBrains Mono", color: scanResult.dynamic_analysis.malware_probability > 0.5 ? "var(--purple-500)" : "var(--emerald-400)", lineHeight: 1.15 }}>
-                    {(scanResult.dynamic_analysis.malware_probability * 100).toFixed(1)}%
+              {scanResult.dynamic_analysis.malware_probability == null || scanResult.dynamic_analysis.status === "unavailable" ? (
+                <div style={{ background: "rgba(11, 15, 25, 0.6)", padding: "1.25rem", borderRadius: "var(--radius-sm)", marginBottom: "1.75rem", border: "1px dashed rgba(168, 85, 247, 0.4)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "1.2rem" }}>ℹ️</span>
+                    <span style={{ fontWeight: 700, color: "var(--purple-400)" }}>Live Dynamic Telemetry Unavailable (Static Verdict Preserved)</span>
                   </div>
-                  <div className="progress-bar-container" style={{ margin: "12px 0 10px" }}>
-                    <div
-                      className="progress-bar"
-                      style={{
-                        width: `${scanResult.dynamic_analysis.malware_probability * 100}%`,
-                        background: scanResult.dynamic_analysis.malware_probability > 0.5 ? "linear-gradient(90deg, var(--purple-500), var(--rose-500))" : "var(--emerald-500)",
-                      }}
-                    />
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                    No execution trace (.strace/.log) was uploaded and no active Android emulator was attached via ADB.
+                    AegisDroid operates in high-confidence Static Gatekeeper mode, classifying this package from full 215-D bytecode and manifest analysis without runtime degradation.
                   </div>
-                  <span style={{ fontSize: "0.82rem", padding: "4px 12px", borderRadius: "4px", background: scanResult.dynamic_analysis.malware_probability > 0.5 ? "rgba(168, 85, 247, 0.2)" : "rgba(16, 185, 129, 0.2)", color: scanResult.dynamic_analysis.malware_probability > 0.5 ? "var(--purple-500)" : "var(--emerald-400)", fontWeight: 700, display: "inline-block" }}>
-                    {scanResult.dynamic_analysis.malware_probability > 0.5 ? "⚠️ MALICIOUS RUNTIME BEHAVIOR" : "✅ NORMAL KERNEL EXECUTION"}
-                  </span>
                 </div>
-
-                {/* Dynamic KPI Sub-grid */}
-                {(() => {
-                  const stats = scanResult.dynamic_analysis.telemetry_stats || {};
-                  const top = scanResult.dynamic_analysis.top_invoked || [];
-                  const totalSyscalls = (stats.total_syscalls != null && stats.total_syscalls > 0)
-                    ? stats.total_syscalls
-                    : top.filter(x => x.type === "Syscall").reduce((acc, c) => acc + c.count, 0);
-                  const totalBinders = (stats.total_binders != null && stats.total_binders > 0)
-                    ? stats.total_binders
-                    : top.filter(x => x.type === "Binder").reduce((acc, c) => acc + c.count, 0);
-
-                  return (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                      <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>REAL KERNEL SYSCALLS</div>
-                        <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--purple-500)", fontFamily: "JetBrains Mono" }}>
-                          {totalSyscalls.toLocaleString()}
-                        </div>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Invocations traced in sandbox</div>
-                      </div>
-                      <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>IPC BINDER TRANSACTIONS</div>
-                        <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--cyan-400)", fontFamily: "JetBrains Mono" }}>
-                          {totalBinders.toLocaleString()}
-                        </div>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Inter-process interactions</div>
-                      </div>
-                      <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>ACTIVE VECTOR DIMENSIONS</div>
-                        <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--amber-400)", fontFamily: "JetBrains Mono" }}>
-                          {stats.active_features || stats.unique_features_activated || 28} <span style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>/ 470</span>
-                        </div>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Non-zero dynamic dimensions</div>
-                      </div>
-                      <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>TELEMETRY SPARSITY</div>
-                        <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--text-main)", fontFamily: "JetBrains Mono" }}>
-                          {stats.sparsity_percentage ? stats.sparsity_percentage.toFixed(1) : "93.4"}%
-                        </div>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Zero-call manifold ratio</div>
-                      </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr", gap: "1.5rem", marginBottom: "1.75rem", background: "rgba(11, 15, 25, 0.6)", padding: "1.25rem", borderRadius: "var(--radius-sm)" }}>
+                  <div>
+                    <div className="stat-label">Dynamic Malware Risk Probability</div>
+                    <div style={{ fontSize: "2.8rem", fontWeight: 800, fontFamily: "JetBrains Mono", color: scanResult.dynamic_analysis.malware_probability > 0.5 ? "var(--purple-500)" : "var(--emerald-400)", lineHeight: 1.15 }}>
+                      {(scanResult.dynamic_analysis.malware_probability * 100).toFixed(1)}%
                     </div>
-                  );
-                })()}
-              </div>
+                    <div className="progress-bar-container" style={{ margin: "12px 0 10px" }}>
+                      <div
+                        className="progress-bar"
+                        style={{
+                          width: `${scanResult.dynamic_analysis.malware_probability * 100}%`,
+                          background: scanResult.dynamic_analysis.malware_probability > 0.5 ? "linear-gradient(90deg, var(--purple-500), var(--rose-500))" : "var(--emerald-500)",
+                        }}
+                      />
+                    </div>
+                    <span style={{ fontSize: "0.82rem", padding: "4px 12px", borderRadius: "4px", background: scanResult.dynamic_analysis.malware_probability > 0.5 ? "rgba(168, 85, 247, 0.2)" : "rgba(16, 185, 129, 0.2)", color: scanResult.dynamic_analysis.malware_probability > 0.5 ? "var(--purple-500)" : "var(--emerald-400)", fontWeight: 700, display: "inline-block" }}>
+                      {scanResult.dynamic_analysis.malware_probability > 0.5 ? "⚠️ MALICIOUS RUNTIME BEHAVIOR" : "✅ NORMAL KERNEL EXECUTION"}
+                    </span>
+                  </div>
+
+                  {/* Dynamic KPI Sub-grid */}
+                  {(() => {
+                    const stats = scanResult.dynamic_analysis.telemetry_stats || {};
+                    const top = scanResult.dynamic_analysis.top_invoked || [];
+                    const totalSyscalls = (stats.total_syscalls != null && stats.total_syscalls > 0)
+                      ? stats.total_syscalls
+                      : top.filter(x => x.type === "Syscall").reduce((acc, c) => acc + c.count, 0);
+                    const totalBinders = (stats.total_binders != null && stats.total_binders > 0)
+                      ? stats.total_binders
+                      : top.filter(x => x.type === "Binder").reduce((acc, c) => acc + c.count, 0);
+
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                        <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>REAL KERNEL SYSCALLS</div>
+                          <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--purple-500)", fontFamily: "JetBrains Mono" }}>
+                            {totalSyscalls.toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Invocations traced in sandbox</div>
+                        </div>
+                        <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>IPC BINDER TRANSACTIONS</div>
+                          <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--cyan-400)", fontFamily: "JetBrains Mono" }}>
+                            {totalBinders.toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Inter-process interactions</div>
+                        </div>
+                        <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>ACTIVE VECTOR DIMENSIONS</div>
+                          <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--amber-400)", fontFamily: "JetBrains Mono" }}>
+                            {stats.active_features || stats.unique_features_activated || 0} <span style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>/ 470</span>
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Non-zero dynamic dimensions</div>
+                        </div>
+                        <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>TELEMETRY SPARSITY</div>
+                          <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--text-main)", fontFamily: "JetBrains Mono" }}>
+                            {stats.sparsity_percentage ? stats.sparsity_percentage.toFixed(1) : "100.0"}%
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Zero-call manifold ratio</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* Dynamic Details: Frequency Table */}
               <div style={{ fontSize: "0.88rem", fontWeight: 700, marginBottom: "8px", color: "var(--text-muted)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -524,29 +537,35 @@ export default function AegisDroidHIDS() {
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr", gap: "1.5rem", marginBottom: "1.75rem", background: "rgba(11, 15, 25, 0.6)", padding: "1.25rem", borderRadius: "var(--radius-sm)" }}>
                 <div>
                   <div className="stat-label">VirusTotal Consensus Detection Ratio</div>
-                  <div style={{ fontSize: "2.8rem", fontWeight: 800, fontFamily: "JetBrains Mono", color: scanResult.virustotal?.signature_detected ? "var(--rose-400)" : "var(--emerald-400)", lineHeight: 1.15 }}>
-                    {scanResult.virustotal?.detection_ratio || (scanResult.virustotal?.signature_detected ? "38/74" : "0/72")}
+                  <div style={{ fontSize: "2.8rem", fontWeight: 800, fontFamily: "JetBrains Mono", color: scanResult.virustotal?.signature_detected ? "var(--rose-400)" : (scanResult.virustotal?.status === "unavailable" ? "var(--text-dim)" : "var(--emerald-400)"), lineHeight: 1.15 }}>
+                    {scanResult.virustotal?.status === "unavailable" ? "N/A" : (scanResult.virustotal?.detection_ratio || "0/0")}
                   </div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", margin: "8px 0" }}>
-                    Security engines flagging this binary fingerprint as malicious
+                    {scanResult.virustotal?.status === "unavailable"
+                      ? "API key unconfigured (decoupled from ML pipeline)"
+                      : (scanResult.virustotal?.status === "not_found"
+                        ? "Zero prior signatures in VirusTotal threat feed"
+                        : "Security engines flagging this binary fingerprint as malicious")}
                   </div>
-                  <span style={{ fontSize: "0.82rem", padding: "4px 12px", borderRadius: "4px", background: scanResult.virustotal?.signature_detected ? "rgba(244, 63, 94, 0.2)" : "rgba(16, 185, 129, 0.2)", color: scanResult.virustotal?.signature_detected ? "var(--rose-400)" : "var(--emerald-400)", fontWeight: 700, display: "inline-block" }}>
-                    {scanResult.virustotal?.verdict || (scanResult.virustotal?.signature_detected ? "Known Malicious Signature" : "Clean / Benign")}
+                  <span style={{ fontSize: "0.82rem", padding: "4px 12px", borderRadius: "4px", background: scanResult.virustotal?.signature_detected ? "rgba(244, 63, 94, 0.2)" : (scanResult.virustotal?.status === "unavailable" ? "rgba(100, 116, 139, 0.2)" : "rgba(16, 185, 129, 0.2)"), color: scanResult.virustotal?.signature_detected ? "var(--rose-400)" : (scanResult.virustotal?.status === "unavailable" ? "var(--text-dim)" : "var(--emerald-400)"), fontWeight: 700, display: "inline-block" }}>
+                    {scanResult.virustotal?.status === "unavailable"
+                      ? "API Key Unconfigured"
+                      : (scanResult.virustotal?.verdict || (scanResult.virustotal?.signature_detected ? "Known Malicious Signature" : "Clean / Zero Prior Match"))}
                   </span>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                   <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>POPULAR THREAT LABEL</div>
-                    <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--rose-400)", wordBreak: "break-word" }}>
-                      {scanResult.virustotal?.threat_label || scanResult.sample_category || "Trojan-SMS.AndroidOS"}
+                    <div style={{ fontSize: "1.05rem", fontWeight: 700, color: scanResult.virustotal?.signature_detected ? "var(--rose-400)" : "var(--text-main)", wordBreak: "break-word" }}>
+                      {scanResult.virustotal?.threat_label || (scanResult.virustotal?.status === "unavailable" ? "Unconfigured" : "Zero Signatures")}
                     </div>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Antivirus Industry Consensus</div>
                   </div>
                   <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>MALICIOUS ENGINES</div>
                     <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--rose-500)", fontFamily: "JetBrains Mono" }}>
-                      {scanResult.virustotal?.malicious_engines !== undefined ? scanResult.virustotal?.malicious_engines : (scanResult.virustotal?.signature_detected ? 38 : 0)}
+                      {scanResult.virustotal?.malicious_engines || 0}
                     </div>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Positive threat detections</div>
                   </div>
@@ -560,7 +579,7 @@ export default function AegisDroidHIDS() {
                   <div style={{ background: "rgba(15, 23, 42, 0.75)", padding: "12px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "uppercase" }}>CLEAN / UNDETECTED</div>
                     <div style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--emerald-400)", fontFamily: "JetBrains Mono" }}>
-                      {(scanResult.virustotal?.total_engines || 74) - (scanResult.virustotal?.malicious_engines !== undefined ? scanResult.virustotal?.malicious_engines : (scanResult.virustotal?.signature_detected ? 38 : 0))}
+                      {scanResult.virustotal?.total_engines ? (scanResult.virustotal.total_engines - (scanResult.virustotal.malicious_engines || 0)) : 0}
                     </div>
                     <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Clean vendor ratings</div>
                   </div>
@@ -583,32 +602,34 @@ export default function AegisDroidHIDS() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(
-                      scanResult.virustotal?.vendor_sample_verdicts || {
-                        "Kaspersky": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "HEUR:Trojan-SMS.AndroidOS.FakeInst.a" : "Clean" },
-                        "Microsoft Defender": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "Trojan:AndroidOS/FakeInst" : "Clean" },
-                        "Google Play Protect": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "Detected" : "Clean" },
-                        "Avast / AVG": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "Android:FakeInst-A [Trj]" : "Clean" },
-                        "Symantec": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "Mobile.FakeInst" : "Clean" },
-                        "Sophos": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "Andr/FakeInst-A" : "Clean" },
-                        "ESET-NOD32": { category: scanResult.virustotal?.signature_detected ? "malicious" : "clean", result: scanResult.virustotal?.signature_detected ? "Android/FakeInst" : "Clean" }
-                      }
-                    ).map(([vendor, verdict], idx) => {
-                      const isMal = verdict.category === "malicious" || (verdict.result && verdict.result.toLowerCase() !== "clean");
-                      return (
-                        <tr key={idx}>
-                          <td style={{ fontWeight: 600, color: "var(--text-main)" }}>{vendor}</td>
-                          <td>
-                            <span style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: "4px", background: isMal ? "rgba(244, 63, 94, 0.2)" : "rgba(16, 185, 129, 0.2)", color: isMal ? "var(--rose-400)" : "var(--emerald-400)", fontWeight: 700 }}>
-                              {isMal ? "MALICIOUS" : "CLEAN"}
-                            </span>
-                          </td>
-                          <td style={{ fontFamily: "JetBrains Mono", fontSize: "0.82rem", color: isMal ? "var(--rose-400)" : "var(--text-muted)" }}>
-                            {verdict.result || "Clean"}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {scanResult.virustotal?.vendor_sample_verdicts && Object.keys(scanResult.virustotal.vendor_sample_verdicts).length > 0 ? (
+                      Object.entries(scanResult.virustotal.vendor_sample_verdicts).map(([vendor, verdict], idx) => {
+                        const isMal = verdict.category === "malicious" || (verdict.result && verdict.result.toLowerCase() !== "clean");
+                        return (
+                          <tr key={idx}>
+                            <td style={{ fontWeight: 600, color: "var(--text-main)" }}>{vendor}</td>
+                            <td>
+                              <span style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: "4px", background: isMal ? "rgba(244, 63, 94, 0.2)" : "rgba(16, 185, 129, 0.2)", color: isMal ? "var(--rose-400)" : "var(--emerald-400)", fontWeight: 700 }}>
+                                {isMal ? "MALICIOUS" : "CLEAN"}
+                              </span>
+                            </td>
+                            <td style={{ fontFamily: "JetBrains Mono", fontSize: "0.82rem", color: isMal ? "var(--rose-400)" : "var(--text-muted)" }}>
+                              {verdict.result || "Clean"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: "center", color: "var(--text-dim)", padding: "1.5rem" }}>
+                          {scanResult.virustotal?.status === "unavailable"
+                            ? "VirusTotal API key is not configured in .env. No external vendor verdicts retrieved."
+                            : (scanResult.virustotal?.status === "not_found"
+                              ? "Cryptographic hash not present in VirusTotal threat feed (Zero Prior Signatures)."
+                              : "No external vendor verdicts available for this hash.")}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
