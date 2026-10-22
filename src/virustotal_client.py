@@ -21,7 +21,7 @@ import re
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import requests
 from dotenv import load_dotenv
 
@@ -30,6 +30,12 @@ load_dotenv(str(BASE_DIR / ".env"))
 
 logger = logging.getLogger("AegisDroid.VirusTotal")
 VT_BASE_URL = "https://www.virustotal.com/api/v3"
+
+EMPTY_FILE_HASHES = {
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855": "SHA-256",
+    "da39a3ee5e6b4b0d3255bfef95601890afd80709": "SHA-1",
+    "d41d8cd98f00b204e9800998ecf8427e": "MD5"
+}
 
 
 class VirusTotalSignatureAnalyzer:
@@ -79,15 +85,35 @@ class VirusTotalSignatureAnalyzer:
             "md5": md5_hash.hexdigest()
         }
 
-    @staticmethod
-    def is_valid_hash(hash_str: str) -> bool:
-        """Validates if string is a valid MD5 (32), SHA-1 (40), or SHA-256 (64) hex string."""
+    @classmethod
+    def validate_hash(cls, hash_str: Optional[str]) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Validates hash algorithm, format, and rejects empty-file digests.
+        Returns:
+            Tuple[bool, Optional[str], Optional[str]]: (is_valid, hash_type, error_reason)
+        """
         if not hash_str or not isinstance(hash_str, str):
-            return False
+            return False, None, "Hash string is missing, empty, or not a string."
+
         clean = hash_str.strip().lower()
-        if len(clean) in (32, 40, 64) and re.fullmatch(r"[0-9a-f]+", clean):
-            return True
-        return False
+        if clean in EMPTY_FILE_HASHES:
+            algo = EMPTY_FILE_HASHES[clean]
+            return False, None, f"Hash corresponds to {algo} digest of an empty file and cannot represent a valid APK identity."
+
+        if not re.fullmatch(r"[0-9a-f]+", clean):
+            return False, None, "Hash contains non-hexadecimal characters."
+
+        length_to_type = {32: "MD5", 40: "SHA-1", 64: "SHA-256"}
+        if len(clean) not in length_to_type:
+            return False, None, f"Invalid hash length: {len(clean)}. Expected 32 (MD5), 40 (SHA-1), or 64 (SHA-256) characters."
+
+        return True, length_to_type[len(clean)], None
+
+    @classmethod
+    def is_valid_hash(cls, hash_str: str) -> bool:
+        """Validates if string is a valid, non-empty-file MD5 (32), SHA-1 (40), or SHA-256 (64) hex string."""
+        valid, _, _ = cls.validate_hash(hash_str)
+        return valid
 
     def query_hash(self, file_hash: str) -> Dict[str, Any]:
         """
@@ -96,14 +122,16 @@ class VirusTotalSignatureAnalyzer:
         """
         clean_hash = file_hash.strip().lower() if file_hash else ""
 
-        if not self.is_valid_hash(clean_hash):
+        is_valid, hash_type, reason = self.validate_hash(clean_hash)
+        if not is_valid:
+            err_code = "empty_file_digest_rejected" if "empty file" in (reason or "") else "invalid_hash_format"
             return {
                 "status": "error",
                 "success": False,
                 "signature_detected": False,
                 "hash": clean_hash,
-                "error": "invalid_hash_format",
-                "message": "Provided hash is not a valid hexadecimal MD5, SHA-1, or SHA-256 string."
+                "error": err_code,
+                "message": reason or "Provided hash is not a valid hexadecimal MD5, SHA-1, or SHA-256 string."
             }
 
         if not self.api_key:

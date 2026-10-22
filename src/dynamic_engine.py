@@ -72,52 +72,164 @@ class DynamicTelemetryEngine:
         """Returns the exact 139 Linux syscall feature schema subset from CICMalDroid."""
         return sorted(list(self.syscalls))[:139]
 
-    def parse_strace_log(self, log_path: str) -> np.ndarray:
+    def parse_strace_log_detailed(self, log_path: str) -> Dict[str, Any]:
         """
-        Parses an actual Linux strace log file from emulator or physical device execution.
+        Parses an actual Linux strace log file with full validation and structural diagnostics.
         Counts occurrences of the 470 syscalls and Binder transactions deterministically.
 
-        Handles:
-        - Standard strace: '1234  ioctl(4, BINDER_WRITE_READ, ...) = 0'
-        - Prefixed with timestamps: '12:00:00.123456 open("/dev/null", O_RDONLY) = 3'
-        - Resumed lines: '<... futex resumed> ) = 0'
-        - Malformed or incomplete lines.
+        Distinguishes:
+        - Missing file ('file_missing')
+        - Empty file ('empty')
+        - Malformed or corrupt non-text file ('malformed')
+        - Valid trace with zero matching features ('no_supported_events')
+        - Valid trace with extracted features ('success')
 
         Returns:
-            np.ndarray: Integer vector of shape (470,), int32.
+            Dict[str, Any] with status, vector, event counts, top features, and diagnostic message.
         """
-        vector = np.zeros(self.num_features, dtype=np.int32)
+        zero_vec = np.zeros(self.num_features, dtype=np.int32)
+
         if not log_path or not os.path.exists(log_path):
-            logger.warning("Trace log not found at '%s'. Returning zero vector.", log_path)
-            return vector
+            return {
+                "status": "file_missing",
+                "vector": zero_vec,
+                "total_lines": 0,
+                "recognized_events": 0,
+                "syscall_events": 0,
+                "binder_events": 0,
+                "top_features": [],
+                "message": f"Trace log file not found at '{log_path}'."
+            }
 
         try:
-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            file_size = os.path.getsize(log_path)
+            if file_size == 0:
+                return {
+                    "status": "empty",
+                    "vector": zero_vec,
+                    "total_lines": 0,
+                    "recognized_events": 0,
+                    "syscall_events": 0,
+                    "binder_events": 0,
+                    "top_features": [],
+                    "message": "Trace log file is completely empty (0 bytes)."
+                }
+        except Exception as e:
+            return {
+                "status": "error",
+                "vector": zero_vec,
+                "total_lines": 0,
+                "recognized_events": 0,
+                "syscall_events": 0,
+                "binder_events": 0,
+                "top_features": [],
+                "message": f"Error accessing trace file: {e}"
+            }
+
+        vector = np.zeros(self.num_features, dtype=np.int32)
+        total_lines = 0
+        valid_lines = 0
+        syscall_count = 0
+        binder_count = 0
+
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
+                    total_lines += 1
                     line_clean = line.strip()
                     if not line_clean or line_clean.startswith("---") or line_clean.startswith("+++"):
                         continue
+
+                    valid_lines += 1
 
                     # 1. Parse system call from start of line or after PID/timestamp
                     paren_idx = line_clean.find("(")
                     if paren_idx > 0:
                         prefix = line_clean[:paren_idx].strip()
-                        # Tokens before '(' e.g. "1234 openat" or "ioctl"
                         call_token = prefix.split()[-1] if prefix.split() else ""
-                        if call_token in self.feature_index:
+                        if call_token in self.syscalls:
                             vector[self.feature_index[call_token]] += 1
+                            syscall_count += 1
 
                     # 2. Match Binder IPC transactions if present in the line
                     if self._binder_regex:
                         for match in self._binder_regex.finditer(line_clean):
                             b_name = match.group(1)
-                            if b_name in self.feature_index:
+                            if b_name in self.binders:
                                 vector[self.feature_index[b_name]] += 1
+                                binder_count += 1
 
         except Exception as e:
-            logger.error("Error parsing trace log '%s': %s", log_path, e)
+            logger.error("Error reading trace log '%s': %s", log_path, e)
+            return {
+                "status": "malformed",
+                "vector": zero_vec,
+                "total_lines": total_lines,
+                "recognized_events": 0,
+                "syscall_events": 0,
+                "binder_events": 0,
+                "top_features": [],
+                "message": f"Trace file parsing failed due to unexpected format or decode error: {e}"
+            }
 
-        return vector
+        total_recognized = int(np.sum(vector))
+
+        if valid_lines == 0:
+            return {
+                "status": "empty",
+                "vector": zero_vec,
+                "total_lines": total_lines,
+                "recognized_events": 0,
+                "syscall_events": 0,
+                "binder_events": 0,
+                "top_features": [],
+                "message": "Trace log contained no executable text lines."
+            }
+
+        if total_recognized == 0:
+            return {
+                "status": "no_supported_events",
+                "vector": zero_vec,
+                "total_lines": total_lines,
+                "recognized_events": 0,
+                "syscall_events": 0,
+                "binder_events": 0,
+                "top_features": [],
+                "message": (
+                    f"Parsed {total_lines} lines but found 0 events matching the 470 CICMalDroid "
+                    "kernel syscall or Binder transaction schema. Trace cannot support dynamic inference."
+                )
+            }
+
+        # Identify top features
+        top_indices = np.argsort(vector)[::-1][:15]
+        top_features = [
+            {
+                "feature": self.feature_names[idx],
+                "type": "Syscall" if self.feature_names[idx] in self.syscalls else "Binder",
+                "count": int(vector[idx])
+            }
+            for idx in top_indices if vector[idx] > 0
+        ]
+
+        return {
+            "status": "success",
+            "vector": vector,
+            "total_lines": total_lines,
+            "recognized_events": total_recognized,
+            "syscall_events": syscall_count,
+            "binder_events": binder_count,
+            "top_features": top_features,
+            "message": f"Successfully extracted {total_recognized} dynamic kernel & IPC events from {total_lines} lines."
+        }
+
+    def parse_strace_log(self, log_path: str) -> np.ndarray:
+        """
+        Parses an actual Linux strace log file from emulator or physical device execution.
+        Returns integer vector of shape (470,), int32.
+        """
+        res = self.parse_strace_log_detailed(log_path)
+        return res["vector"]
 
     def check_adb_connection(self) -> Tuple[bool, Optional[str], Optional[str]]:
         """
@@ -185,6 +297,11 @@ class DynamicTelemetryEngine:
                 "events_captured": 0
             }
 
+        # Clamp execution duration to reasonable safety boundaries (5 to 60 seconds)
+        duration_seconds = max(5, min(int(duration_seconds), 60))
+        strace_remote_log = "/data/local/tmp/aegis_trace.log"
+        installed = False
+
         # Safe execution workflow
         try:
             if not os.path.exists(apk_path):
@@ -202,15 +319,20 @@ class DynamicTelemetryEngine:
             if not package_name:
                 raise ValueError("Could not determine package name for target APK.")
 
+            # Validate package name syntax to prevent shell argument injection
+            if not re.match(r"^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$", package_name):
+                raise ValueError(f"Invalid package name format '{package_name}'. Potential argument injection.")
+
             logger.info("Executing live dynamic profiling for package '%s' on device %s...", package_name, device_id)
 
             # 2. Install APK with timeout
             install_res = subprocess.run(
                 [adb_path, "-s", device_id, "install", "-r", apk_path],
-                capture_output=True, text=True, timeout=40
+                capture_output=True, text=True, timeout=45
             )
             if "Success" not in install_res.stdout:
                 raise RuntimeError(f"APK installation failed: {install_res.stderr or install_res.stdout}")
+            installed = True
 
             # 3. Launch application main activity using monkey
             subprocess.run(
@@ -218,8 +340,7 @@ class DynamicTelemetryEngine:
                 capture_output=True, timeout=10
             )
 
-            # 4. Attach strace to spawned process tree
-            strace_remote_log = "/data/local/tmp/aegis_trace.log"
+            # 4. Attach strace to spawned process tree with safe timeout
             strace_script = (
                 f"pid=$(pidof {package_name}); "
                 f"if [ -n \"$pid\" ]; then "
@@ -234,27 +355,29 @@ class DynamicTelemetryEngine:
 
             # 5. Pull trace log
             os.makedirs(os.path.dirname(temp_log_path), exist_ok=True)
-            subprocess.run(
+            pull_res = subprocess.run(
                 [adb_path, "-s", device_id, "pull", strace_remote_log, temp_log_path],
                 timeout=15,
                 capture_output=True
             )
 
+            if not os.path.exists(temp_log_path) or os.path.getsize(temp_log_path) == 0:
+                raise RuntimeError("Failed to capture runtime strace log or log is empty.")
+
             # 6. Parse trace log
-            vector = self.parse_strace_log(temp_log_path)
-            events = int(np.sum(vector))
+            parsed_res = self.parse_strace_log_detailed(temp_log_path)
+            vector = parsed_res["vector"]
+            events = parsed_res["recognized_events"]
 
-            # 7. Safe cleanup on device
-            subprocess.run([adb_path, "-s", device_id, "shell", f"rm -f {strace_remote_log}"], timeout=10)
-            subprocess.run([adb_path, "-s", device_id, "uninstall", package_name], timeout=20)
-
-            logger.info("Live dynamic execution succeeded: %d kernel events captured.", events)
+            logger.info("Live dynamic execution finished: %d events captured (status: %s).", events, parsed_res["status"])
             return vector, {
-                "status": "success",
+                "status": parsed_res["status"],
                 "execution_mode": "live_adb_strace",
                 "device_id": device_id,
                 "duration_seconds": duration_seconds,
-                "events_captured": events
+                "events_captured": events,
+                "syscall_events": parsed_res["syscall_events"],
+                "binder_events": parsed_res["binder_events"]
             }
 
         except Exception as e:
@@ -266,6 +389,17 @@ class DynamicTelemetryEngine:
                 "duration_seconds": 0,
                 "events_captured": 0
             }
+        finally:
+            # Guarnateed cleanup on remote device
+            try:
+                subprocess.run([adb_path, "-s", device_id, "shell", f"rm -f {strace_remote_log}"], timeout=10, capture_output=True)
+            except Exception:
+                pass
+            if installed and package_name:
+                try:
+                    subprocess.run([adb_path, "-s", device_id, "uninstall", package_name], timeout=20, capture_output=True)
+                except Exception:
+                    pass
 
     def generate_calibrated_telemetry(
         self,

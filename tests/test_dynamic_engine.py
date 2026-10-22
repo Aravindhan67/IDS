@@ -128,3 +128,76 @@ def test_simulated_mode_provenance_isolation(dyn_engine):
     assert meta["status"] == "simulated"
     assert meta["execution_mode"] == "simulated_demo_protocol"
     assert "SIMULATED_DEMO_DATA" in meta["provenance"]
+
+
+def test_detailed_strace_parsing_states(dyn_engine):
+    """
+    Tests detailed strace parsing distinguishing: empty, no_supported_events, success.
+    """
+    # 1. Empty trace
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
+        tmp_empty = f.name
+    try:
+        res_empty = dyn_engine.parse_strace_log_detailed(tmp_empty)
+        assert res_empty["status"] == "empty"
+        assert res_empty["recognized_events"] == 0
+    finally:
+        if os.path.exists(tmp_empty):
+            os.remove(tmp_empty)
+
+    # 2. Trace with no recognized events
+    unsupported_trace = (
+        "100  custom_app_log(\"hello world\") = 0\n"
+        "100  unrecognized_routine_xyz(1, 2, 3) = 0\n"
+        "100  --- SIGCHLD {si_signo=SIGCHLD} ---\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
+        f.write(unsupported_trace)
+        tmp_unsupported = f.name
+    try:
+        res_unsupported = dyn_engine.parse_strace_log_detailed(tmp_unsupported)
+        assert res_unsupported["status"] == "no_supported_events"
+        assert res_unsupported["recognized_events"] == 0
+        assert res_unsupported["total_lines"] >= 3
+    finally:
+        if os.path.exists(tmp_unsupported):
+            os.remove(tmp_unsupported)
+
+    # 3. Valid trace with recognized events
+    valid_trace = (
+        "100  open(\"/system/bin/sh\", O_RDONLY) = 3\n"
+        "100  close(3) = 0\n"
+        "100  sendMultipartText(12345, \"payload\") = 1\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
+        f.write(valid_trace)
+        tmp_valid = f.name
+    try:
+        res_valid = dyn_engine.parse_strace_log_detailed(tmp_valid)
+        assert res_valid["status"] == "success"
+        assert res_valid["recognized_events"] == 3
+        assert res_valid["syscall_events"] >= 2
+        assert res_valid["binder_events"] >= 1
+    finally:
+        if os.path.exists(tmp_valid):
+            os.remove(tmp_valid)
+
+
+def test_live_sandbox_package_injection_prevention(dyn_engine):
+    """
+    Validates package name syntax against command injection.
+    """
+    with patch.object(dyn_engine, "check_adb_connection", return_value=(True, "adb", "emulator-5554")):
+        with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as f:
+            f.write(b"PK...")
+            tmp_apk = f.name
+
+        try:
+            # Dangerous injected package names
+            for bad_pkg in ["com.malicious; rm -rf /", "com.app$(reboot)", "pkg&whoami", "invalid package"]:
+                vec, meta = dyn_engine.run_live_sandbox_trace(tmp_apk, package_name=bad_pkg)
+                assert meta["status"] == "failed"
+                assert "invalid package name" in meta["reason"].lower()
+        finally:
+            if os.path.exists(tmp_apk):
+                os.remove(tmp_apk)

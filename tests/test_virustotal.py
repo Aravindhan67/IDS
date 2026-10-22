@@ -30,8 +30,12 @@ def test_hash_format_validation():
     assert VirusTotalSignatureAnalyzer.is_valid_hash("275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f")
     # Valid MD5
     assert VirusTotalSignatureAnalyzer.is_valid_hash("44d88612fea8a8f36de82e1278abb02f")
-    # Valid SHA-1
-    assert VirusTotalSignatureAnalyzer.is_valid_hash("da39a3ee5e6b4b0d3255bfef95601890afd80709")
+    # Valid SHA-1 (non-empty)
+    assert VirusTotalSignatureAnalyzer.is_valid_hash("2aae6c35c94fcfb415dbe95f408b9ce91ee846ed")
+    # Empty-file digests must NOT be treated as valid APK hashes
+    assert not VirusTotalSignatureAnalyzer.is_valid_hash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    assert not VirusTotalSignatureAnalyzer.is_valid_hash("da39a3ee5e6b4b0d3255bfef95601890afd80709")
+    assert not VirusTotalSignatureAnalyzer.is_valid_hash("d41d8cd98f00b204e9800998ecf8427e")
     # Invalid strings
     assert not VirusTotalSignatureAnalyzer.is_valid_hash("not_a_hash")
     assert not VirusTotalSignatureAnalyzer.is_valid_hash("12345")
@@ -101,12 +105,25 @@ def test_vt_not_found_state(vt_client):
     mock_resp.status_code = 404
 
     with patch("requests.get", return_value=mock_resp):
-        res = vt_client.query_hash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        res = vt_client.query_hash("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
         assert res["status"] == "not_found"
         assert res["success"]
         assert not res["signature_detected"]
         assert res["detection_ratio"] == "0/0"
         assert res["malicious_engines"] == 0
+
+
+def test_empty_file_hash_rejection(vt_client):
+    # Empty-file SHA-256
+    res = vt_client.query_hash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    assert res["status"] == "error"
+    assert res["error"] == "empty_file_digest_rejected"
+    assert "empty file" in res["message"].lower()
+
+    # Empty-file MD5
+    res_md5 = vt_client.query_hash("d41d8cd98f00b204e9800998ecf8427e")
+    assert res_md5["status"] == "error"
+    assert res_md5["error"] == "empty_file_digest_rejected"
 
 
 def test_vt_rate_limited_state(vt_client):
